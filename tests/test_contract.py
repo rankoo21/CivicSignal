@@ -27,3 +27,13 @@ def test_bad_consensus_fails(env):
     w.extend(['status body is sufficiently long for testing','postmortem body is sufficiently long for testing','advisory body is sufficiently long for testing'])
     q.append('{}')
     with pytest.raises((ValueError,UserError)): c.verify_incident('INC-3')
+
+def test_recheck_accepts_equivalent_status_with_different_wording(env):
+ _,c,gl,q,w,p=env
+ c.open_incident('INC-4','API','This incident summary is long enough for validation.','https://status.example/a','https://postmortem.example/b','https://advisory.example/c')
+ bodies=['x'*50,'y'*50,'z'*50]; w.extend(bodies*4)
+ q.extend(['{"status":"ACTIVE","summary":"First wording is different.","next_step":"Keep watching the service."}','{"status":"ACTIVE","summary":"Validator used another wording.","next_step":"Continue monitoring."}'])
+ c.verify_incident('INC-4')
+ q.extend(['{"status":"RESOLVED","summary":"Resolved after follow-up.","next_step":"Archive the incident."}','{"status":"RESOLVED","summary":"Different prose, same decision.","next_step":"Keep the record."}'])
+ c.verify_incident('INC-4'); c.close_incident('INC-4')
+ r=json.loads(c.get_incident('0xowner','INC-4')); assert r['state']=='CLOSED' and r['verification_count']==2 and len(r['history'])==2
