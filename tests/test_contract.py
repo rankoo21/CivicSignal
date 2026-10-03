@@ -37,3 +37,21 @@ def test_recheck_accepts_equivalent_status_with_different_wording(env):
  q.extend(['{"status":"RESOLVED","summary":"Resolved after follow-up.","next_step":"Archive the incident."}','{"status":"RESOLVED","summary":"Different prose, same decision.","next_step":"Keep the record."}'])
  c.verify_incident('INC-4'); c.close_incident('INC-4')
  r=json.loads(c.get_incident('0xowner','INC-4')); assert r['state']=='CLOSED' and r['verification_count']==2 and len(r['history'])==2
+
+def test_harmless_transport_difference_is_tolerated(env):
+ _,c,gl,q,w,p=env
+ c.open_incident('INC-5','API','This incident summary is long enough for validation.','https://status.example/a','https://postmortem.example/b','https://advisory.example/c')
+ leader=['status says resolved and service is operating normally.\n\n','postmortem says resolved after mitigation and follow-up.\n','advisory says resolved and monitoring continues.\n']
+ validator=['  status   says resolved and service is operating normally.  \n','postmortem says resolved after mitigation and follow-up.\n\n','advisory says resolved and monitoring continues.  ']
+ w.extend(leader+validator); q.extend(['{"status":"RESOLVED","summary":"The incident is resolved.","next_step":"Monitor recovery."}']*2)
+ c.verify_incident('INC-5'); r=json.loads(c.get_incident('0xowner','INC-5'))
+ assert r['signal']=='RESOLVED' and r['digests']==[__import__('hashlib').sha256(x.strip().encode()).hexdigest() for x in leader]
+ assert len(r['raw_digests'])==3
+
+def test_material_difference_still_fails(env):
+ _,c,gl,q,w,p=env
+ c.open_incident('INC-6','API','This incident summary is long enough for validation.','https://status.example/a','https://postmortem.example/b','https://advisory.example/c')
+ w.extend(['status says resolved and service is operating normally.','postmortem says resolved after mitigation and follow-up.','advisory says resolved and monitoring continues.','status says ongoing impact affects users right now.','postmortem says ongoing impact remains unresolved.','advisory says ongoing impact is still being investigated.'])
+ q.extend(['{"status":"RESOLVED","summary":"The incident is resolved.","next_step":"Monitor recovery."}','{"status":"ACTIVE","summary":"The incident is still active.","next_step":"Continue monitoring."}'])
+ with pytest.raises(UserError): c.verify_incident('INC-6')
+ assert json.loads(c.get_incident('0xowner','INC-6'))['state']=='OPEN'
