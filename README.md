@@ -6,5 +6,6 @@ Lifecycle: `OPEN` → `VERIFIED` → `VERIFIED` (recheckable) → `CLOSED` (only
 
 - Contract: `contracts/civic_signal.py`
 - Tests: `python -m pytest tests -q`
-- Live address: `0xBBc581290bE743E7cC9686A0cB30ba3D52282061`
+- Live address: `0x60980e74289e2d01e0790FB6784F0869Cb0775df`
 - Network: GenLayer Studionet
+- Website: `https://civic-signal-genlayer.pages.dev/`
