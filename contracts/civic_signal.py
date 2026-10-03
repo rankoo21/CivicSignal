@@ -2,7 +2,7 @@
 """Consensus-backed incident status board with source-attributed resolution."""
 from genlayer import *
 from urllib.parse import urlparse
-import hashlib, json
+import hashlib, json, re
 
 def enc(v): return json.dumps(v, sort_keys=True, separators=(",", ":"))
 def ident(v):
@@ -17,6 +17,11 @@ def text(v,lo,hi):
     v=v.strip()
     if not lo<=len(v)<=hi: raise gl.vm.UserError("text length outside bounds")
     return v
+def canonical_body(v):
+    """Remove transport-only whitespace while preserving words and punctuation."""
+    v=v.replace("\r\n","\n").replace("\r","\n")
+    v=re.sub(r"[ \t]+"," ",v)
+    return "\n".join(line.strip() for line in v.split("\n") if line.strip()).strip()
 def signal(raw):
     x=json.loads(raw)
     if type(x) is not dict or set(x)!={"status","summary","next_step"} or x["status"] not in ("ACTIVE","MITIGATED","RESOLVED","CONFLICTING"): raise ValueError("bad signal")
@@ -46,19 +51,22 @@ class CivicSignal(gl.Contract):
         key=self.key(str(gl.message.sender_address),incident_id); r=json.loads(self.incidents.get(key,"{}"))
         if not r or r["state"] not in ("OPEN","VERIFIED"): raise gl.vm.UserError("incident cannot be verified again")
         def run():
-            bodies=[gl.nondet.web.get(u).body.decode("utf-8") for u in (r["status_url"],r["postmortem_url"],r["advisory_url"])]
-            if not all(40<=len(v)<=60000 for v in bodies): raise gl.vm.UserError("incident source unavailable")
+            raw=[gl.nondet.web.get(u).body.decode("utf-8") for u in (r["status_url"],r["postmortem_url"],r["advisory_url"])]
+            if not all(40<=len(v)<=60000 for v in raw): raise gl.vm.UserError("incident source unavailable")
+            bodies=[canonical_body(v) for v in raw]
             out=assess({"service":r["service"],"summary":r["summary"],"status_page":bodies[0],"postmortem":bodies[1],"advisory":bodies[2]})
             finding,next_step=canonical(out["status"])
-            return enc({"signal":out["status"],"finding":finding,"next_step":next_step,"digests":[hashlib.sha256(v.encode()).hexdigest() for v in bodies]})
+            return enc({"signal":out["status"],"finding":finding,"next_step":next_step,"digests":[hashlib.sha256(v.encode()).hexdigest() for v in bodies],"raw_digests":[hashlib.sha256(v.encode()).hexdigest() for v in raw]})
         def valid(x):
             if not isinstance(x,gl.vm.Return): return False
             try:
-                bodies=[gl.nondet.web.get(u).body.decode("utf-8") for u in (r["status_url"],r["postmortem_url"],r["advisory_url"])]
+                raw=[gl.nondet.web.get(u).body.decode("utf-8") for u in (r["status_url"],r["postmortem_url"],r["advisory_url"])]
+                bodies=[canonical_body(v) for v in raw]
                 out=assess({"service":r["service"],"summary":r["summary"],"status_page":bodies[0],"postmortem":bodies[1],"advisory":bodies[2]})
                 finding,next_step=canonical(out["status"])
                 expected={"signal":out["status"],"finding":finding,"next_step":next_step,"digests":[hashlib.sha256(v.encode()).hexdigest() for v in bodies]}
-                return json.loads(x.calldata)==expected
+                candidate=json.loads(x.calldata)
+                return all(candidate.get(k)==v for k,v in expected.items()) and isinstance(candidate.get("raw_digests"),list) and len(candidate["raw_digests"])==3
             except Exception: return False
         receipt=json.loads(gl.vm.run_nondet_unsafe(run,valid)); r.update(receipt); r["state"]="VERIFIED"; r["verification_count"]=int(r.get("verification_count",0))+1; r.setdefault("history",[]).append({"attempt":r["verification_count"],"signal":r["signal"],"digests":r["digests"]}); self.incidents[key]=enc(r)
     @gl.public.write
