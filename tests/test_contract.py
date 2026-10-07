@@ -55,3 +55,14 @@ def test_material_difference_still_fails(env):
  q.extend(['{"status":"RESOLVED","summary":"The incident is resolved.","next_step":"Monitor recovery."}','{"status":"ACTIVE","summary":"The incident is still active.","next_step":"Continue monitoring."}'])
  with pytest.raises(UserError): c.verify_incident('INC-6')
  assert json.loads(c.get_incident('0xowner','INC-6'))['state']=='OPEN'
+
+def test_harmless_html_and_metadata_churn_is_tolerated(env):
+ _,c,gl,q,w,p=env
+ c.open_incident('INC-7','API','This incident summary is long enough for validation.','https://status.example/a','https://postmortem.example/b','https://advisory.example/c')
+ leader=['<main><p>Service recovered and monitoring continues. The incident remains under observation for follow-up work.</p></main>','<article>Incident closed after mitigation. The postmortem records the recovery and follow-up actions.</article>','<div>Recovery confirmed. Independent advisory confirms normal service and continued monitoring.</div>']
+ validator=['<main data-rendered="2026-10-07T10:00:00Z"><p>Service recovered and monitoring continues. The incident remains under observation for follow-up work.</p><script>window.now=1</script></main>','<!-- generated --><article class="fresh">Incident closed after mitigation. The postmortem records the recovery and follow-up actions.</article>','<div data-cache="b7">Recovery confirmed. Independent advisory confirms normal service and continued monitoring.</div>']
+ w.extend(leader+validator)
+ q.extend(['{"status":"RESOLVED","summary":"The incident is resolved.","next_step":"Monitor recovery."}']*2)
+ c.verify_incident('INC-7')
+ r=json.loads(c.get_incident('0xowner','INC-7'))
+ assert r['state']=='VERIFIED' and r['signal']=='RESOLVED'
