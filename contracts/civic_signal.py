@@ -18,10 +18,30 @@ def text(v,lo,hi):
     if not lo<=len(v)<=hi: raise gl.vm.UserError("text length outside bounds")
     return v
 def canonical_body(v):
-    """Remove transport-only whitespace while preserving words and punctuation."""
+    """Build a stable evidence view without hashing transport chrome.
+
+    Status pages are frequently regenerated with different HTML attributes,
+    scripts, comments, timestamps, or line wrapping while the incident prose
+    is unchanged.  Consensus is about that readable evidence, not those
+    transport details.
+    """
     v=v.replace("\r\n","\n").replace("\r","\n")
-    v=re.sub(r"[ \t]+"," ",v)
-    return "\n".join(line.strip() for line in v.split("\n") if line.strip()).strip()
+    v=re.sub(r"<!--.*?-->"," ",v,flags=re.S)
+    v=re.sub(r"<script\b[^>]*>.*?</script>"," ",v,flags=re.I|re.S)
+    v=re.sub(r"<style\b[^>]*>.*?</style>"," ",v,flags=re.I|re.S)
+    v=re.sub(r"<[^>]+>"," ",v)
+    # Common generated metadata is useful for a browser but not for the
+    # incident decision. Keep the line only when it contains real prose.
+    lines=[]
+    for line in v.split("\n"):
+        line=re.sub(r"[ \t]+"," ",line).strip()
+        if not line or re.fullmatch(r"(?:updated?|last checked|refreshed?)\s*[:\-].*",line,flags=re.I):
+            continue
+        lines.append(line)
+    return "\n".join(lines).strip()
+
+def digest_list(values):
+    return isinstance(values,list) and len(values)==3 and all(isinstance(v,str) and re.fullmatch(r"[0-9a-f]{64}",v) for v in values)
 def signal(raw):
     x=json.loads(raw)
     if type(x) is not dict or set(x)!={"status","summary","next_step"} or x["status"] not in ("ACTIVE","MITIGATED","RESOLVED","CONFLICTING"): raise ValueError("bad signal")
@@ -64,9 +84,13 @@ class CivicSignal(gl.Contract):
                 bodies=[canonical_body(v) for v in raw]
                 out=assess({"service":r["service"],"summary":r["summary"],"status_page":bodies[0],"postmortem":bodies[1],"advisory":bodies[2]})
                 finding,next_step=canonical(out["status"])
-                expected={"signal":out["status"],"finding":finding,"next_step":next_step,"digests":[hashlib.sha256(v.encode()).hexdigest() for v in bodies]}
+                expected={"signal":out["status"],"finding":finding,"next_step":next_step}
                 candidate=json.loads(x.calldata)
-                return all(candidate.get(k)==v for k,v in expected.items()) and isinstance(candidate.get("raw_digests"),list) and len(candidate["raw_digests"])==3
+                # Digest bytes can legitimately differ when validators fetch a
+                # page with harmless HTML/metadata churn. Recheck the source
+                # semantics and decision fields independently, then require
+                # only well-formed attribution digests from the leader.
+                return all(candidate.get(k)==v for k,v in expected.items()) and digest_list(candidate.get("digests")) and digest_list(candidate.get("raw_digests"))
             except Exception: return False
         receipt=json.loads(gl.vm.run_nondet_unsafe(run,valid)); r.update(receipt); r["state"]="VERIFIED"; r["verification_count"]=int(r.get("verification_count",0))+1; r.setdefault("history",[]).append({"attempt":r["verification_count"],"signal":r["signal"],"digests":r["digests"]}); self.incidents[key]=enc(r)
     @gl.public.write
