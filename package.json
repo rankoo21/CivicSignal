@@ -12,7 +12,7 @@
     "lint": "oxlint",
     "format": "oxfmt",
     "contract:test": "python -m pytest tests -q",
-    "contract:lint": "genvm-lint contracts/civic_signal.py",
+    "contract:lint": "cmd /c \"set PYTHONIOENCODING=utf-8&& genvm-lint contracts/civic_signal.py\"",
     "verify:live": "node scripts/verify-live.mjs"
   },
   "dependencies": {
