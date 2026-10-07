@@ -2,7 +2,7 @@
 import {useState} from 'react';
 import {Activity, BellRing, CheckCircle2, Radio, Siren} from 'lucide-react';
 import {useLedger} from '@/lib/ledger';
-import deployment from '@/artifacts/deployment.json';
+import deployment from '@/lib/deployment';
 
 export default function Home(){
  const l=useLedger(deployment.address); const [id,setId]=useState('INCIDENT-001'); const [service,setService]=useState('Payments API'); const [summary,setSummary]=useState('Intermittent failures are affecting a subset of requests.'); const [status,setStatus]=useState('https://status.example.com/'); const [postmortem,setPostmortem]=useState('https://postmortem.example.com/'); const [advisory,setAdvisory]=useState('https://advisory.example.com/'); const [record,setRecord]=useState<any>(null);
